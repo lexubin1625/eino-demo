@@ -21,10 +21,77 @@ var (
 )
 
 func main() {
-
+	// 使用网页搜索工具回答用户问题
+	searchWeb()
+	// 使用自定义数据库查询工具回答问题
+	//searchDB()
 }
 
-func search() {
+func searchDB() {
+	ctx := context.Background()
+
+	// 创建模型并绑定工具（演示完整链路）
+	cm, err := createChatModel(ctx)
+	if err != nil {
+		log.Fatalf("创建聊天模型失败: %v", err)
+	}
+	// 获取
+	userTool, err := search_user_info()
+
+	toolInfo, _ := userTool.Info(ctx)
+	if err := cm.BindTools([]*schema.ToolInfo{toolInfo}); err != nil {
+		log.Fatalf("绑定工具到模型失败: %v", err)
+	}
+
+	// 创建工具节点，用于执行工具调用
+	toolsNode, err := compose.NewToolNode(ctx, &compose.ToolsNodeConfig{Tools: []tool.BaseTool{userTool}})
+	if err != nil {
+		log.Fatalf("创建工具节点失败: %v", err)
+	}
+
+	var toolOutMsgs []*schema.Message // 工具输出消息
+	var toolsMessage *schema.Message  // 工具会话消息
+
+	// 3) 构造用户消息，提示模型可以调用工具
+	messages := []*schema.Message{
+		{Role: schema.System, Content: "你可使用提供的工具回答问题。尽量直接查出"},
+		{Role: schema.User, Content: "查询张三信息。"},
+	}
+	//  模型生成，若包含 tool_calls 则执行工具
+	firstResp, err := cm.Generate(ctx, messages)
+	if err != nil {
+		log.Fatalf("模型生成失败: %v", err)
+	}
+	if len(firstResp.ToolCalls) > 0 {
+		toolsMessage = &schema.Message{Role: schema.Assistant, ToolCalls: firstResp.ToolCalls}
+		toolOutMsgs, err = toolsNode.Invoke(ctx, toolsMessage)
+		if err != nil {
+			log.Fatalf("工具执行失败: %v", err)
+		}
+	}
+
+	// 直接构造一次工具调用（可替代模型生成的 tool_calls）
+	// toolsMessage := &schema.Message{
+	// 	Role:    schema.Assistant,
+	// 	Content: "",
+	// 	ToolCalls: []schema.ToolCall{
+	// 		{
+	// 			Function: schema.FunctionCall{
+	// 				Name:      toolInfo.Name,
+	// 				Arguments: `{"name": "张三"}`,
+	// 			},
+	// 		},
+	// 	},
+	// }
+
+	for _, m := range toolOutMsgs {
+		if m.Content != "" {
+			fmt.Println(m.Content)
+		}
+	}
+}
+
+func searchWeb() {
 	ctx := context.Background()
 
 	// 网页查询工具

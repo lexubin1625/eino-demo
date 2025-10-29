@@ -239,5 +239,5 @@ openapi.yaml
 
 # Nacos
 nacos-sdk.log
-
+./qoder/*
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,windows,macos,linux,go,goland,git
