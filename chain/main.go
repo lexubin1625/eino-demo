@@ -110,8 +110,8 @@ func main() {
 	// First the tools node, then the chat model to properly handle the types
 	chain := compose.NewChain[[]*schema.Message, []*schema.Message]()
 	chain.
-		AppendChatModel(chatModel, compose.WithNodeName("chat_model")).
-		AppendToolsNode(toolsNode, compose.WithNodeName("search"))
+		AppendToolsNode(toolsNode, compose.WithNodeName("search")).
+		AppendChatModel(chatModel, compose.WithNodeName("chat_model"))
 
 	// Compile the chain to obtain the agent.
 	agent, err := chain.Compile(ctx)

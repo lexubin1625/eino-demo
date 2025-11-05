@@ -23,6 +23,48 @@ var (
 
 func main() {
 	ctx := context.Background()
+	graph := compose.NewGraph[map[string]any, *schema.Message]()
+	node1 := compose.InvokableLambda(func(ctx context.Context, input map[string]any) (map[string]any, error) {
+		return nil, nil
+	})
+	node2 := compose.InvokableLambda(func(ctx context.Context, input map[string]any) (*schema.Message, error) {
+		return &schema.Message{
+			Role:    schema.User,
+			Content: "矩形的长和宽分别是15厘米和7.5厘米",
+		}, nil
+	})
+
+	graph.AddLambdaNode("node1", node1)
+	graph.AddLambdaNode("node2", node2)
+	graph.AddEdge(compose.START, "node1")
+	graph.AddBranch("lambda", compose.NewGraphBranch(func(ctx context.Context, in map[string]string) (endNode string, err error) {
+		if in["role"] == "tsundere" {
+
+			return "tsundere", nil
+		}
+		if in["role"] == "cute" {
+			return "cute", nil
+		}
+		return "tsundere", nil
+	}, map[string]bool{"tsundere": true, "cute": true}))
+	graph.AddEdge("node1", "node2")
+	graph.AddEdge("node2", compose.END)
+	agent, err := graph.Compile(ctx)
+	if err != nil {
+		panic(err)
+	}
+	input := map[string]any{
+		"question": "一个矩形的长是宽的2倍，周长是30厘米，求长和宽分别是多少？",
+	}
+	output, err := agent.Invoke(ctx, input)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(output.Content)
+}
+func answer() {
+	ctx := context.Background()
 
 	if llmKey == "" {
 		log.Fatal("DASHSCOPE_API_KEY 未设置，请在环境变量中配置后再运行")
