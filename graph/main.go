@@ -24,10 +24,14 @@ var (
 )
 
 func main() {
-	tag()
-	return
+	SubjectAnswer()
+	QuestionAnswer()
+}
+
+func SubjectAnswer() {
 	ctx := context.Background()
 
+	// 学科历史上在文
 	type UserState struct {
 		Messages []*schema.Message
 		Subject  string
@@ -38,12 +42,14 @@ func main() {
 		Question string
 	}
 
-	gen := func(ctx context.Context) *UserState {
+	graph := compose.NewGraph[*schema.Message, *schema.Message](compose.WithGenLocalState(func(ctx context.Context) *UserState {
 		return &UserState{Messages: make([]*schema.Message, 0)}
-	}
-
-	graph := compose.NewGraph[*schema.Message, *schema.Message](compose.WithGenLocalState(gen))
-	statePost := func(ctx context.Context, out UserParams, state *UserState) (UserParams, error) {
+	}))
+	questionToHistory := func(ctx context.Context, out UserParams, state *UserState) (UserParams, error) {
+		if state.Subject != out.Subject { // 如果当前对话不是旧对话的学科，重置上下文
+			state.Subject = out.Subject
+			state.Messages = make([]*schema.Message, 0)
+		}
 		state.Messages = append(state.Messages, &schema.Message{Role: schema.User, Content: out.Question})
 		return out, nil
 	}
@@ -81,12 +87,12 @@ func main() {
 	// 数学节点：使用 compose.ProcessState 读取 TopicState
 	mathNode := compose.InvokableLambda(func(ctx context.Context, in UserParams) (*schema.Message, error) {
 		subject := in.Subject
-		// _ = compose.ProcessState(ctx, func(_ context.Context, st *TopicState) error {
-		// 	if st != nil && st.Subject != "" {
-		// 		subject = st.Subject
-		// 	}
-		// 	return nil
-		// })
+		_ = compose.ProcessState(ctx, func(_ context.Context, st *UserState) error {
+			if st != nil && st.Subject != "" {
+				subject = st.Subject
+			}
+			return nil
+		})
 		result := "数学题解答（学科：" + subject + ")"
 		return &schema.Message{Role: schema.Assistant, Content: result}, nil
 	})
@@ -103,9 +109,9 @@ func main() {
 	})
 
 	graph.AddLambdaNode("subjectIdentify", subjectIdentify,
-		compose.WithStatePostHandler(statePost),
+		compose.WithStatePostHandler(questionToHistory),
 	)
-	graph.AddLambdaNode("mathNode", mathNode, compose.WithStatePostHandler(msgToHistory))
+	graph.AddLambdaNode("mthNode", mathNode, compose.WithStatePostHandler(msgToHistory))
 	graph.AddLambdaNode("englishNode", englishNode, compose.WithStatePostHandler(msgToHistory))
 	graph.AddLambdaNode("otherNode", otherNode)
 
@@ -155,148 +161,7 @@ func genCallback() callbacks.Handler {
 	return handler
 }
 
-func tag() {
-	// 使用 Eino + 对话模型，构建基于词库的文本打标签 Graph（词库可达上千）
-	ctx := context.Background()
-
-	// 本地状态：保存短语词库
-	type TagState struct {
-		Lexicon []string
-	}
-
-	// 初始化本地状态（可替换为从文件/DB加载）
-	gen := func(ctx context.Context) *TagState {
-		return &TagState{Lexicon: []string{
-			"人工智能", "大模型", "云原生", "矩形", "周长", "翻译", "数学", "英语",
-		}}
-	}
-
-	// Graph：输入 string（文本），输出 []string（标签）
-	g := compose.NewGraph[string, []string](compose.WithGenLocalState(gen))
-
-	// 预选节点：基于词库做快速匹配，选出候选（限制上限，避免提示超长）
-	type TagCandidates struct {
-		Text       string
-		Candidates []string
-	}
-
-	preselect := compose.InvokableLambda(func(ctx context.Context, text string) (TagCandidates, error) {
-		cand := TagCandidates{Text: text}
-		if text == "" {
-			return cand, nil
-		}
-		lower := strings.ToLower(text)
-		// 并发安全地读取词库
-		_ = compose.ProcessState[*TagState](ctx, func(_ context.Context, st *TagState) error {
-			if st == nil || len(st.Lexicon) == 0 {
-				return nil
-			}
-			// 简单子串匹配作为候选，限制最多 200 个（示例）
-			const limit = 200
-			for _, phrase := range st.Lexicon {
-				p := strings.TrimSpace(phrase)
-				if p == "" {
-					continue
-				}
-				if strings.Contains(lower, strings.ToLower(p)) {
-					cand.Candidates = append(cand.Candidates, p)
-					if len(cand.Candidates) >= limit {
-						break
-					}
-				}
-			}
-			return nil
-		})
-		return cand, nil
-	})
-
-	// 构造对话消息：把文本和候选列表提供给模型，只允许输出候选中的标签
-	buildMessages := compose.InvokableLambda(func(ctx context.Context, in TagCandidates) ([]*schema.Message, error) {
-		// 严格限制模型：只能从候选中选择；若候选为空则输出空
-		var msgs []*schema.Message
-		if len(in.Candidates) == 0 {
-			sys := &schema.Message{Role: schema.System, Content: "你是一个文本标签助手。\n严格要求：候选为空时请输出空字符串，不要输出任何标签或解释。"}
-			user := &schema.Message{Role: schema.User, Content: fmt.Sprintf("文本：%s\n候选：", in.Text)}
-			msgs = []*schema.Message{sys, user}
-		} else {
-			candStr := strings.Join(in.Candidates, ", ")
-			sys := &schema.Message{Role: schema.System, Content: "你是一个文本标签助手。\n严格要求：只输出提供的候选标签，用中文逗号分隔，不要包含解释或多余字符。不得输出候选之外的标签。"}
-			user := &schema.Message{Role: schema.User, Content: fmt.Sprintf("文本：%s\n候选：%s", in.Text, candStr)}
-			msgs = []*schema.Message{sys, user}
-		}
-		return msgs, nil
-	})
-
-	// 创建对话模型
-	cm, err := createChatModel(ctx)
-	if err != nil {
-		log.Fatalf("Failed to create chat model: %v", err)
-	}
-
-	// 解析模型输出为标签数组，并对齐到词库（过滤掉非词库项）
-	parse := compose.InvokableLambda(func(ctx context.Context, msg *schema.Message) ([]string, error) {
-		out := strings.TrimSpace(msg.Content)
-		if out == "" {
-			return nil, nil
-		}
-		// 支持逗号/换行分隔
-		parts := strings.FieldsFunc(out, func(r rune) bool { return r == ',' || r == '，' || r == '\n' })
-		// 去重 + 过滤到词库
-		uniq := make(map[string]struct{}, len(parts))
-		var tags []string
-		_ = compose.ProcessState[*TagState](ctx, func(_ context.Context, st *TagState) error {
-			if st == nil {
-				return nil
-			}
-			// 构造词库集合（小写匹配）
-			lex := make(map[string]struct{}, len(st.Lexicon))
-			for _, p := range st.Lexicon {
-				lex[strings.ToLower(strings.TrimSpace(p))] = struct{}{}
-			}
-			for _, it := range parts {
-				t := strings.TrimSpace(it)
-				if t == "" {
-					continue
-				}
-				if _, seen := uniq[t]; seen {
-					continue
-				}
-				if _, ok := lex[strings.ToLower(t)]; ok {
-					uniq[t] = struct{}{}
-					tags = append(tags, t)
-				}
-			}
-			return nil
-		})
-		return tags, nil
-	})
-
-	_ = g.AddLambdaNode("preselect", preselect)
-	_ = g.AddLambdaNode("build_messages", buildMessages)
-	_ = g.AddChatModelNode("chat_model", cm)
-	_ = g.AddLambdaNode("parse", parse)
-
-	_ = g.AddEdge(compose.START, "preselect")
-	_ = g.AddEdge("preselect", "build_messages")
-	_ = g.AddEdge("build_messages", "chat_model")
-	_ = g.AddEdge("chat_model", "parse")
-	_ = g.AddEdge("parse", compose.END)
-
-	runnable, err := g.Compile(ctx)
-	if err != nil {
-		log.Fatalf("Failed to compile tag graph: %v", err)
-	}
-
-	// 示例：运行一次，打印标签
-	sample := "请解答数学题：一个矩形的周长是30厘米，这是一个云原生示例。"
-	out, err := runnable.Invoke(ctx, sample)
-	if err != nil {
-		log.Fatalf("Tag graph run failed: %v", err)
-	}
-	fmt.Printf("文本: %s\n标签: %s\n", sample, strings.Join(out, ", "))
-}
-
-func answer() {
+func QuestionAnswer() {
 	ctx := context.Background()
 
 	if llmKey == "" {
