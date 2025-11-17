@@ -24,8 +24,10 @@ var (
 )
 
 func main() {
+	// 学科识别演示
 	SubjectAnswer()
-	QuestionAnswer()
+	// 模型流程演示
+	//QuestionAnswer()
 }
 
 func SubjectAnswer() {
