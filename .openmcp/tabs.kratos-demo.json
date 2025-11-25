@@ -1,0 +1,33 @@
+{
+  "clientId": "34819471-9471-5194715c4bc-8194715c4bc66ed-c66edf3d",
+  "currentIndex": 0,
+  "tabs": [
+    {
+      "name": "工具",
+      "icon": "icon-tool",
+      "type": "blank",
+      "componentIndex": 2,
+      "storage": {
+        "activeNames": [
+          0
+        ],
+        "autoDetectDiagram": {
+          "edges": [],
+          "views": []
+        },
+        "formData": {
+          "user_id": "6787959c18b93f0001497b75"
+        },
+        "currentToolName": "get_user",
+        "lastToolCallResponse": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"id\":\"6787959c18b93f0001497b75\",\"name\":\"2u4z7nv22o85415\",\"phone\":\"15035776541\",\"email\":\"\",\"nickname\":\"150**\",\"salt\":\"\",\"password\":\"\",\"pwIterations\":10,\"channel\":\"guanghetv\",\"type\":\"signup\",\"from\":\"\",\"role\":\"student\",\"countryCode\":\"CN\",\"onionId\":\"300010035\",\"regionCode\":\"\",\"school_id\":0,\"schoolYear\":\"高三\",\"realIdentity\":\"student\",\"realName\":\"\",\"gender\":\"female\",\"verifiedByPhone\":true,\"registAppVersion\":\"7.73.0\",\"activateDate\":\"0001-01-01T00:00:00Z\",\"thirdPartyOauths\":[],\"createTime\":\"2025-01-15T19:01:48.10978+08:00\",\"updateTime\":\"2025-11-14T12:27:43.386332+08:00\",\"RegistEntranceId\":\"01\",\"os\":\"android\",\"attribution\":\"c\",\"brigRemoveTime\":\"\",\"value\":\"low\",\"schoolYear54or63\":\"fiveFour\"}"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
