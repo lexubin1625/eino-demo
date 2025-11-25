@@ -19,9 +19,9 @@ import (
 )
 
 func init() {
-	// os.Setenv("https_proxy", "http://127.0.0.1:33210")
-	// os.Setenv("http_proxy", "http://127.0.0.1:33210")
-	// os.Setenv("all_proxy", "socks5://127.0.0.1:33211")
+	os.Setenv("https_proxy", "http://127.0.0.1:33210")
+	os.Setenv("http_proxy", "http://127.0.0.1:33210")
+	os.Setenv("all_proxy", "socks5://127.0.0.1:33211")
 }
 
 var (
@@ -232,16 +232,16 @@ func main() {
 	if err := ReactAgent(ctx, question); err != nil {
 		log.Fatalf("运行 ReAct 代理失败: %v", err)
 	}
-	// 运行 ReAct 代理
-	if err := runReActAgent(ctx, question); err != nil {
-		log.Fatalf("运行 ReAct 代理失败: %v", err)
-	}
+	// // 运行 ReAct 代理
+	// if err := runReActAgent(ctx, question); err != nil {
+	// 	log.Fatalf("运行 ReAct 代理失败: %v", err)
+	// }
 
-	// 运行 ReAct RAG 代理
-	question = "感冒了有什么症状,并给出治疗建议"
-	if err := ReActRag(ctx, question); err != nil {
-		log.Fatalf("运行 ReAct RAG 代理失败: %v", err)
-	}
+	// // 运行 ReAct RAG 代理
+	// question = "感冒了有什么症状,并给出治疗建议"
+	// if err := ReActRag(ctx, question); err != nil {
+	// 	log.Fatalf("运行 ReAct RAG 代理失败: %v", err)
+	// }
 }
 
 // ReactAgent 使用 eino 的 react.NewAgent 实现 ReAct 代理
@@ -261,7 +261,7 @@ func ReactAgent(ctx context.Context, question string) error {
 		return fmt.Errorf("创建搜索工具失败: %w", err)
 	}
 
-	// // 3. 获取工具信息并绑定到模型
+	// 3. 获取工具信息并绑定到模型
 	// toolInfo, err := searchTool.Info(ctx)
 	// if err != nil {
 	// 	return fmt.Errorf("获取工具信息失败: %w", err)
@@ -275,7 +275,7 @@ func ReactAgent(ctx context.Context, question string) error {
 	// 5. 创建 ReAct Agent
 	// react.NewAgent 会自动处理：思考 -> 行动 -> 观察 -> 再思考的循环
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		Model: cm, // 使用支持工具调用的模型
+		ToolCallingModel: cm, // 支持工具调用的模型
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: []tool.BaseTool{searchTool},
 		},

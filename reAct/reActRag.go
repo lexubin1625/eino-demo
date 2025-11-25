@@ -74,7 +74,7 @@ func ReActRag(ctx context.Context, question string) error {
 
 	// 8. 创建 ReAct Agent
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		Model: cm, // 使用 ToolCallingModel 而不是 Model
+		ToolCallingModel: cm, // 使用 ToolCallingModel 而不是 Model
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: []tool.BaseTool{ragTool, searchTool},
 		},
