@@ -9,11 +9,14 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+	ccb "github.com/cloudwego/eino-ext/callbacks/cozeloop"
 	chatOpenAi "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/coze-dev/cozeloop-go"
 )
 
 var (
@@ -229,7 +232,6 @@ func (a *ArbitrateTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	if err != nil {
 		return "", err
 	}
-
 	return msg.Content, nil
 }
 
@@ -286,9 +288,9 @@ func qualityCheckAndAcceptance(ctx context.Context, question string) error {
 	}
 
 	qualityCheckAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "质检Agent",
+		Name:        "验收Agent",
 		Description: "负责答案相似度比较和逻辑校验",
-		Instruction: `你是质检 Agent，负责执行质检-验收流程。
+		Instruction: `你是验收 Agent，负责执行质检-验收流程。
 
 输入说明：
 - 你的输入可能包含：问题、答案A、答案B（从前一个Agent的输出中获取）
@@ -328,8 +330,7 @@ func qualityCheckAndAcceptance(ctx context.Context, question string) error {
 		return fmt.Errorf("创建质检 Agent 失败: %w", err)
 	}
 
-	// 4. 使用 SequentialAgent 控制执行顺序
-	// SequentialAgent 会自动将前一个Agent的输出作为下一个Agent的输入
+	// 4.
 	// 需要修改自验证Agent的输出格式，使其包含问题、答案A和答案B
 	// 创建一个包装自验证Agent，使其输出包含完整上下文
 	selfVerifyWithContext, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
@@ -344,32 +345,34 @@ func qualityCheckAndAcceptance(ctx context.Context, question string) error {
 工作流程：
 1. 接收输入（可能是问题或空）
 2. 使用已知的问题生成一个新的答案（答案B）
-3. 生成完成后，使用 exit 工具输出，格式为：
+3. 生成完成后，直接输出以下格式的内容（不要使用任何工具，包括exit工具）：
    问题：%s
    答案A：%s
    答案B：[你生成的答案B]
 
-严格禁止：
-- 禁止调用任何工具（除了exit工具）
+重要：
+- 禁止调用任何工具（包括exit工具）
 - 禁止使用transfer_to_agent
-- 直接生成答案并退出`, question, answerA.Content, question, answerA.Content),
+- 直接生成答案并输出，不要退出
+- 输出格式必须严格按照上述格式`, question, answerA.Content, question, answerA.Content),
 		Model:         verifyModel,
 		ToolsConfig:   adk.ToolsConfig{},
 		MaxIterations: 3,
-		Exit:          adk.ExitTool{},
+		// 移除 Exit 工具，让 LoopAgent 可以继续执行下一个 Agent
 	})
 	if err != nil {
 		return fmt.Errorf("创建自验证Agent（带上下文）失败: %w", err)
 	}
 
-	// 使用 SequentialAgent 按顺序执行
-	sequentialAgent, err := adk.NewSequentialAgent(ctx, &adk.SequentialAgentConfig{
-		Name:        "质检-验收流程Agent",
-		Description: "按顺序执行自验证和质检流程",
-		SubAgents:   []adk.Agent{selfVerifyWithContext, qualityCheckAgent},
+	// 使用 LoopAgent 按顺序执行
+	loopAgent, err := adk.NewLoopAgent(ctx, &adk.LoopAgentConfig{
+		Name:          "质检-验收流程Agent",
+		Description:   "按顺序执行自验证和质检流程",
+		SubAgents:     []adk.Agent{selfVerifyWithContext, qualityCheckAgent},
+		MaxIterations: 3,
 	})
 	if err != nil {
-		return fmt.Errorf("创建SequentialAgent失败: %w", err)
+		return fmt.Errorf("创建LoopAgent失败: %w", err)
 	}
 
 	// 5. 运行流程
@@ -377,13 +380,13 @@ func qualityCheckAndAcceptance(ctx context.Context, question string) error {
 	fmt.Println()
 
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           sequentialAgent,
+		Agent:           loopAgent,
 		EnableStreaming: false,
 	})
 
-	// 输入问题，SequentialAgent会按顺序执行子Agent
-	// 第一个Agent（自验证Agent）会接收问题并生成答案B
-	// 第二个Agent（质检Agent）会接收第一个Agent的输出（包含问题、答案A、答案B）
+	// 输入问题，LoopAgent会按顺序执行子Agent
+	// 第一个Agent会接收问题并生成答案B
+	// 第二个Agent（会接收第一个Agent的输出（包含问题、答案A、答案B）
 	iterator := runner.Query(ctx, question)
 
 	var finalResult string
@@ -431,16 +434,24 @@ func qualityCheckAndAcceptance(ctx context.Context, question string) error {
 func main() {
 	ctx := context.Background()
 
-	// 检查环境变量
-	if llmKey == "" {
-		log.Fatal("请设置环境变量 DASHSCOPE_API_KEY")
+	client, err := cozeloop.NewClient()
+	if err != nil {
+		panic(err)
 	}
+	defer client.Close(ctx)
+	handler := ccb.NewLoopHandler(client)
+	callbacks.AppendGlobalHandlers(handler)
 
-	// 示例问题
-	question := "请解释什么是人工智能，并说明它的主要应用领域。"
+	question := `临床上常根据病人病情需要，有针对性地选用不同的成分输血。对于血小板功能低下、贫血、创伤性失血的患者，应分别给他们输入
+选项
+- 全血、红细胞、血小板
+- 血小板、红细胞、全血
+- 血浆、红细胞、血小板
+- 血小板、全血、红细胞`
+	message := fmt.Sprintf(`对如下问题生成中学生物题解，问题：%s`, question)
 
 	// 执行质检-验收流程
-	if err := qualityCheckAndAcceptance(ctx, question); err != nil {
+	if err := qualityCheckAndAcceptance(ctx, message); err != nil {
 		log.Fatalf("质检-验收流程失败: %v", err)
 	}
 }
