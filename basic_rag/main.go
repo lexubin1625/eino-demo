@@ -158,6 +158,7 @@ func chat(ctx context.Context, chatModel *chatOpenAi.ChatModel, messages []*sche
 		if err != nil {
 			log.Fatalf("Recv of streamMsgs failed, err=%v", err)
 		}
+		msg.Extra
 		fmt.Print(msg.Content)
 	}
 }

@@ -504,7 +504,7 @@ func runRAGWithEvaluation(ctx context.Context, question string) error {
 				Tools: []tool.BaseTool{ragTool, evalTool},
 			},
 		},
-		MaxIterations: 20, // 允许更多迭代以支持多次检索和评估
+		MaxIterations: 30, // 允许更多迭代以支持多次检索和评估
 		Exit:          adk.ExitTool{},
 	})
 	if err != nil {
